@@ -64,11 +64,11 @@ void main() {
       propertySetter: '2026-01-01 00:00:00.000000',
     );
     await s.svc.getDocTypeWatermark('Crop');
-    expect(
-      s.asked.toSet(),
-      {'DocType', 'Custom Field', 'Property Setter'},
-      reason: 'a watermark that skips a source cannot detect that source',
-    );
+    expect(s.asked.toSet(), {
+      'DocType',
+      'Custom Field',
+      'Property Setter',
+    }, reason: 'a watermark that skips a source cannot detect that source');
   });
 
   test('a NEWER Custom Field wins — the stale-meta bug', () async {

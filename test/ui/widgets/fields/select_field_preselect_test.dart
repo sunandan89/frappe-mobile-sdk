@@ -160,11 +160,10 @@ void main() {
       await tester.tap(find.byType(Checkbox).first);
       await tester.pumpAndSettle();
 
-      expect(
-        key.currentState!.emissions,
-        ['Only', ''],
-        reason: 'the uncheck must not be followed by a re-preselect',
-      );
+      expect(key.currentState!.emissions, [
+        'Only',
+        '',
+      ], reason: 'the uncheck must not be followed by a re-preselect');
       expect(
         key.currentState!.value,
         '',

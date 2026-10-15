@@ -265,11 +265,9 @@ void _m2AndH1Tests() {
       await client.document.createDocument('Item', {'mobile_uuid': 'u-h1'});
       await client.document.createDocument('Item', {'mobile_uuid': 'u-h1'});
 
-      expect(
-        reported,
-        ['Item/u-h1'],
-        reason: 'the resolve must reach a listener supplied to FrappeClient',
-      );
+      expect(reported, [
+        'Item/u-h1',
+      ], reason: 'the resolve must reach a listener supplied to FrappeClient');
     },
   );
 }

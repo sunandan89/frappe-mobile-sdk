@@ -83,6 +83,30 @@ class FrappeSDK {
   final int listDefaultPageSize;
 
   final bool tamperProtectionEnabled;
+
+  /// Keep personal fields in the local database. Default `false`.
+  ///
+  /// Personal fields are the fields `mobile_control` stores encrypted on the
+  /// server (Mobile Configuration -> Personal Fields; the configuration
+  /// response lists them per form as `personal_fields`).
+  ///
+  /// * `false` (default): they are treated like `Password` fields. They are
+  ///   removed from the stored DocType meta, so they get no local column, are
+  ///   dropped on pull, are never sent on push and are not rendered. Values
+  ///   left in local tables from before the server marked them personal are
+  ///   blanked at the next configuration sync.
+  /// * `true`: they are stored and synced like any other field. Those
+  ///   doctypes are pulled through `mobile_sync.get_docs_with_children`,
+  ///   which returns the clear value to users in the field's allowed roles
+  ///   and null to everyone else; values typed on the device are pushed as
+  ///   typed and encrypted by the server on save.
+  ///
+  /// **Set it to `true` only if the app also encrypts its local database**
+  /// (e.g. SQLCipher). The SDK's SQLite mirror is otherwise plain on disk,
+  /// which is exactly why Password fields are never stored.
+  ///
+  /// Either way, a ciphertext (`enc:v1:...`) is never stored or shown.
+  final bool storePersonalFields;
   final Set<SecurityCheck> tamperProtectionChecks;
   final int tamperProtectionRestartGapMs;
 
@@ -246,6 +270,7 @@ class FrappeSDK {
     this.tamperProtectionEnabled = false,
     this.tamperProtectionChecks = const {},
     this.tamperProtectionRestartGapMs = 600000,
+    this.storePersonalFields = false,
   });
 
   /// Test-only constructor: accepts a pre-built [AppDatabase] (e.g. in-memory).
@@ -274,6 +299,7 @@ class FrappeSDK {
     this.tamperProtectionEnabled = false,
     this.tamperProtectionChecks = const {},
     this.tamperProtectionRestartGapMs = 600000,
+    this.storePersonalFields = false,
   }) : databaseAppName = null,
        payloadTransformer = null,
        onFfiInitFailure = null {
@@ -297,7 +323,11 @@ class FrappeSDK {
     // (e.g. getOrCreateMobileUuid, restoreSession) won't throw "not
     // initialized" if called from any production code path under test.
     _authService = AuthService.forTesting(_client!, database: database);
-    _metaService = MetaService(_client!, _database!);
+    _metaService = MetaService(
+      _client!,
+      _database!,
+      storePersonalFields: storePersonalFields,
+    );
     final testMetaService = _metaService!;
     final testMetaFn = testMetaService.getMeta;
     // `currentUserId` is read lazily, so it is safe that `_sessionUserService`
@@ -444,7 +474,11 @@ class FrappeSDK {
     _modeNotifier = OfflineModeNotifier(resolvedMode);
     _syncCompleteController = StreamController<void>.broadcast();
 
-    _metaService = MetaService(_client!, _database!);
+    _metaService = MetaService(
+      _client!,
+      _database!,
+      storePersonalFields: storePersonalFields,
+    );
     final rawDb = _database!.rawDatabase;
     // Create + restore the session user BEFORE building the sync engine: the
     // push-engine error-log capture holds onto this reference, so it must be

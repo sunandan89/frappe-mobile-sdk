@@ -4,6 +4,7 @@ import '../database/schema/system_columns.dart';
 import '../models/doc_type_meta.dart';
 import '../models/outbox_row.dart';
 import 'child_table_info.dart';
+import 'personal_fields.dart';
 import 'push_error.dart';
 import 'uuid_rewriter.dart';
 
@@ -62,10 +63,18 @@ class PayloadAssembler {
       'mobile_uuid': row.mobileUuid,
     };
 
+    // Personal fields this install does not keep may still have a (blanked)
+    // column from before they were configured. Never send it: a null would
+    // clear the server's value. A ciphertext is never sent either.
+    final droppedPersonal = parentMeta.storesPersonalFields
+        ? const <String>{}
+        : parentMeta.personalFields.toSet();
     for (final entry in parent.entries) {
       final key = entry.key;
       if (_systemColumns.contains(key)) continue;
       if (key.endsWith('__norm')) continue;
+      if (droppedPersonal.contains(key)) continue;
+      if (isEncryptedPersonalValue(entry.value)) continue;
       if (key == 'modified') {
         // Frappe's check_if_latest needs `modified` for UPDATE/SUBMIT/CANCEL.
         if (row.operation == OutboxOperation.update ||

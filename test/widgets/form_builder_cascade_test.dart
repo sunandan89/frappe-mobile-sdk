@@ -125,16 +125,12 @@ void main() {
       expect(sources['a'], [
         ChangeSource.user,
       ], reason: 'the field the user typed into is ChangeSource.user');
-      expect(
-        sources['b'],
-        [ChangeSource.reaction],
-        reason: "b was set by a's handler → its re-fire is a reaction",
-      );
-      expect(
-        sources['c'],
-        [ChangeSource.reaction],
-        reason: 'a cascade hop deeper is still a reaction, never .user',
-      );
+      expect(sources['b'], [
+        ChangeSource.reaction,
+      ], reason: "b was set by a's handler → its re-fire is a reaction");
+      expect(sources['c'], [
+        ChangeSource.reaction,
+      ], reason: 'a cascade hop deeper is still a reaction, never .user');
     },
   );
 

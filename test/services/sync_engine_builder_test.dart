@@ -9,6 +9,7 @@ import 'package:frappe_mobile_sdk/src/models/dep_graph.dart';
 import 'package:frappe_mobile_sdk/src/models/doc_field.dart';
 import 'package:frappe_mobile_sdk/src/models/doc_type_meta.dart';
 import 'package:frappe_mobile_sdk/src/services/sync_engine_builder.dart';
+import 'package:frappe_mobile_sdk/src/sync/personal_fields.dart';
 import 'package:frappe_mobile_sdk/src/sync/sync_state_notifier.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -320,6 +321,57 @@ void main() {
 
       expect(fields, isNotNull);
       expect(jsonDecode(fields!), containsAll(['name', 'modified']));
+    });
+
+    test('a doctype that keeps personal fields takes the bulk path even '
+        'without a Table field', () async {
+      // get_list would return the personal field as ciphertext; only
+      // get_docs_with_children returns the clear value.
+      final meta = DocTypeMeta.fromJson(
+        applyPersonalFieldPolicy(
+          {
+            'name': 'Customer',
+            'fields': [
+              {'fieldname': 'customer_name', 'fieldtype': 'Small Text'},
+            ],
+          },
+          personalFields: const ['customer_name'],
+          store: true,
+        ),
+      );
+      await provisionCustomer(meta);
+      var bulkCalls = 0;
+      final client = MockClient((req) async {
+        if (req.url.path.contains('get_docs_with_children')) {
+          bulkCalls++;
+          return _json({
+            'message': [
+              {
+                'name': 'C-1',
+                'modified': '2026-01-01 00:00:00',
+                'customer_name': 'Alpha',
+              },
+            ],
+          });
+        }
+        if (req.url.path.contains('get_list')) {
+          return _json({
+            'message': bulkCalls == 0
+                ? [
+                    {'name': 'C-1', 'modified': '2026-01-01 00:00:00'},
+                  ]
+                : <Map<String, dynamic>>[],
+          });
+        }
+        return _json({});
+      });
+
+      final pack = await packWith(meta, client);
+      await pack.pullEngine.run(closure);
+
+      expect(bulkCalls, greaterThan(0));
+      final rows = await appDb.rawDatabase.query('docs__customer');
+      expect(rows.single['customer_name'], 'Alpha');
     });
 
     test('a doctype with no Table field takes the flat path and pages by rows '

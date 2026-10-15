@@ -566,11 +566,10 @@ void main() {
         );
         final out = await svc.listFullDocs('Customer');
         expect(out, isA<List<Map<String, dynamic>>>());
-        expect(
-          out.map((d) => d['name']).toList(),
-          ['CUST-2', 'CUST-1'],
-          reason: 'names order, which here is deliberately not sorted order',
-        );
+        expect(out.map((d) => d['name']).toList(), [
+          'CUST-2',
+          'CUST-1',
+        ], reason: 'names order, which here is deliberately not sorted order');
       },
     );
   });

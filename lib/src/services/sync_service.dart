@@ -455,9 +455,16 @@ class SyncService {
     // meta from cache (or doctype_meta DAO) so this works for
     // returning users where `ensureSchemaForClosure` ran on a previous
     // launch only.
+    // Personal fields kept on this install likewise need full docs: only
+    // `get_docs_with_children` returns them decrypted.
     final needsFullDoc =
         (await _repository.doctypesWithChildren()).contains(doctype) ||
-        await _doctypeHasChildTables(doctype);
+        await _doctypeHasChildTables(doctype) ||
+        ((await _loadMetaFromDao(
+              doctype,
+              '_pullOneInternal',
+            ))?.storesPersonalFields ??
+            false);
 
     // Paginate via `limit_start` until the server returns a short page
     // (fewer rows than requested). Without this, doctypes with > 1000

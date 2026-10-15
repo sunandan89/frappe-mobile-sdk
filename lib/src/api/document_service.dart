@@ -2,6 +2,7 @@
 // For license information, please see license.txt
 
 import 'dart:convert';
+import '../sync/personal_fields.dart';
 import 'create_idempotency.dart';
 import 'rest_helper.dart';
 import 'utils.dart';
@@ -77,7 +78,9 @@ class DocumentService {
         '/api/resource/$doctype',
         body: data,
       );
-      return unwrapData<Map<String, dynamic>>(response);
+      return withoutEncryptedPersonalValues(
+        unwrapData<Map<String, dynamic>>(response),
+      );
     }
   }
 
@@ -132,7 +135,9 @@ class DocumentService {
       timeout: _lookupTimeout,
       maxRetries: 0,
     );
-    return unwrapData<Map<String, dynamic>>(doc);
+    return withoutEncryptedPersonalValues(
+      unwrapData<Map<String, dynamic>>(doc),
+    );
   }
 
   Future<Map<String, dynamic>> updateDocument(
@@ -144,7 +149,9 @@ class DocumentService {
       '/api/resource/$doctype/$name',
       body: data,
     );
-    return unwrapData<Map<String, dynamic>>(response);
+    return withoutEncryptedPersonalValues(
+      unwrapData<Map<String, dynamic>>(response),
+    );
   }
 
   Future<void> deleteDocument(String doctype, String name) async {

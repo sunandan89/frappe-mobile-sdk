@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../sync/personal_fields.dart';
 import '../utils/frappe_json_utils.dart';
 import 'doc_field.dart';
 
@@ -51,6 +52,20 @@ class DocTypeMeta {
   /// `_validate_length`. Used to skip the on-device 140-char cap for Singles.
   /// Uses [parseBool] for Frappe's int/bool/string boolean encodings.
   bool get isSingle => parseBool(metaData?['issingle']);
+
+  /// Fields the server stores encrypted (`personal_fields` in the
+  /// mobile configuration), as recorded on this meta when it was stored.
+  /// Empty when none are configured or the meta predates the setting.
+  List<String> get personalFields =>
+      normalisePersonalFields(metaData?[personalFieldsMetaKey]);
+
+  /// True when [personalFields] are kept on this install
+  /// (`FrappeSDK(storePersonalFields: true)`). Such a doctype must be pulled
+  /// through `mobile_sync.get_docs_with_children`, the only endpoint that
+  /// returns the clear values.
+  bool get storesPersonalFields =>
+      metaData?[personalFieldsStoredMetaKey] == true &&
+      personalFields.isNotEmpty;
 
   DocTypeMeta({
     required this.name,

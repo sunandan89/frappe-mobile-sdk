@@ -4,6 +4,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import '../sync/personal_fields.dart';
 import '../sync/sync_details.dart';
 import '../utils/sdk_log.dart';
 import 'exceptions.dart';
@@ -294,9 +295,27 @@ class DoctypeService {
     return docs;
   }
 
+  /// `/api/resource/<doctype>/<name>`.
+  ///
+  /// `/api/resource` returns personal fields (see `mobile_control` Personal
+  /// Fields) as ciphertext. When the doc carries any, it is re-read through
+  /// [bulkGetWithChildren], which returns the clear value to permitted users
+  /// and null to others; if that fails, the ciphertext values are dropped so
+  /// they are never shown or stored as if they were the value.
   Future<Map<String, dynamic>> getByName(String doctype, String name) async {
     final response = await _restHelper.get('/api/resource/$doctype/$name');
-    return unwrapData<Map<String, dynamic>>(response);
+    final doc = unwrapData<Map<String, dynamic>>(response);
+    if (!hasEncryptedPersonalValues(doc)) return doc;
+    try {
+      final docs = await bulkGetWithChildren(doctype, [name]);
+      if (docs.isNotEmpty) return withoutEncryptedPersonalValues(docs.first);
+    } catch (e) {
+      sdkLog(
+        'DoctypeService.getByName($doctype): decrypting re-read failed, '
+        'dropping encrypted values — $e',
+      );
+    }
+    return withoutEncryptedPersonalValues(doc);
   }
 
   /// Bulk-fetch full parent docs (with embedded child rows) via the

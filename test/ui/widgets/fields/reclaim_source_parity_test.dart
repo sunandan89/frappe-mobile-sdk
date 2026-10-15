@@ -44,11 +44,9 @@ void main() {
     await tester.tap(find.byTooltip('Remove attachment'));
     await tester.pump();
 
-    expect(
-      reclaimed,
-      <String?>['/outbox/abc/report.pdf'],
-      reason: 'the discard path already used the precedence-aware value',
-    );
+    expect(reclaimed, <String?>[
+      '/outbox/abc/report.pdf',
+    ], reason: 'the discard path already used the precedence-aware value');
   });
 
   testWidgets('the value reclaimed is trimmed, matching isStagedPath', (

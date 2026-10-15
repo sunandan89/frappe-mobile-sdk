@@ -409,7 +409,10 @@ class SyncEngineBuilder {
       bool hasChildren = false;
       try {
         final meta = await metaResolver(doctype);
-        hasChildren = metaHasChildTableFields(meta);
+        // Personal fields kept on this install also need the bulk endpoint:
+        // `get_list` returns them as ciphertext, `get_docs_with_children`
+        // returns the clear value (or null when the user may not see it).
+        hasChildren = metaPullsFullDocs(meta);
       } catch (e, st) {
         // Do NOT silently degrade to the flat list() path — that reintroduces
         // the empty-child-table bug this branch exists to prevent (a form

@@ -66,4 +66,32 @@ void main() {
     expect(j.containsKey('doctype_meta_modified_at'), isFalse);
     expect(j.containsKey('doctype_icon'), isFalse);
   });
+
+  test('fromJson reads personal_fields and tolerates absence or junk', () {
+    expect(
+      MobileFormName.fromJson({
+        'mobile_workspace_item': 'Beneficiary',
+        'personal_fields': ['phone', 'full_name'],
+      }).personalFields,
+      ['full_name', 'phone'],
+    );
+    expect(
+      MobileFormName.fromJson({'mobile_workspace_item': 'X'}).personalFields,
+      isEmpty,
+    );
+    expect(
+      MobileFormName.fromJson({
+        'mobile_workspace_item': 'X',
+        'personal_fields': 'full_name',
+      }).personalFields,
+      isEmpty,
+    );
+    expect(
+      MobileFormName.fromJson({
+        'mobile_workspace_item': 'X',
+        'personal_fields': [null, '', 'full_name'],
+      }).personalFields,
+      ['full_name'],
+    );
+  });
 }

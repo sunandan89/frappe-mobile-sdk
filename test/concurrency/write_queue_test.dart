@@ -150,11 +150,10 @@ void main() {
       await expectLater(f2, completes);
 
       final rows = await db.query('t', orderBy: 'id ASC');
-      expect(
-        rows.map((r) => r['id']).toList(),
-        [1, 3],
-        reason: 'task[1] partial insert must have been rolled back',
-      );
+      expect(rows.map((r) => r['id']).toList(), [
+        1,
+        3,
+      ], reason: 'task[1] partial insert must have been rolled back');
     },
   );
 }

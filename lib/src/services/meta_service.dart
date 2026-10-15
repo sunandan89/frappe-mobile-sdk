@@ -9,6 +9,7 @@ import '../models/doc_type_meta.dart';
 import '../models/mobile_form_name.dart';
 import '../database/app_database.dart';
 import '../database/entities/doctype_meta_entity.dart';
+import '../sync/personal_fields.dart';
 import 'bulk_watermark_probe.dart';
 import 'closure_builder.dart';
 import 'dependency_graph_builder.dart';
@@ -49,7 +50,60 @@ class MetaService {
   /// fields). Optional — when null, only this service's LRU is cleared.
   void Function(String doctype)? onMetaRefreshed;
 
-  MetaService(this._client, this._database);
+  /// Keep server-encrypted personal fields in the local database (see
+  /// `FrappeSDK.storePersonalFields`). When false they are removed from the
+  /// stored meta, so no column, pull, push or form field exists for them.
+  final bool storePersonalFields;
+
+  /// Personal fields per doctype from the last mobile configuration fetched
+  /// in this session. Null until [resyncMobileConfiguration] has run; until
+  /// then the annotation on the stored meta is used.
+  Map<String, List<String>>? _personalFieldsByDoctype;
+
+  MetaService(this._client, this._database, {this.storePersonalFields = false});
+
+  /// [metaData] annotated (and, when not storing, stripped) per the
+  /// personal-field configuration. Returned unchanged when nothing is known.
+  Map<String, dynamic> _withPersonalFieldPolicy(
+    String doctype,
+    Map<String, dynamic> metaData,
+    String? existingJson,
+  ) {
+    List<String>? fields = _personalFieldsByDoctype == null
+        ? null
+        : (_personalFieldsByDoctype![doctype] ?? const <String>[]);
+    fields ??= readPersonalFieldAnnotation(metaData)?.fields;
+    if (fields == null && existingJson != null && existingJson.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(existingJson);
+        if (decoded is Map<String, dynamic>) {
+          fields = readPersonalFieldAnnotation(decoded)?.fields;
+        }
+      } catch (_) {
+        // Unreadable old row: nothing to carry over.
+      }
+    }
+    if (fields == null) return metaData;
+    return applyPersonalFieldPolicy(
+      metaData,
+      personalFields: fields,
+      store: storePersonalFields,
+    );
+  }
+
+  /// A stored meta whose annotation says personal fields were kept, read by
+  /// an install that no longer keeps them: strip them at read time until the
+  /// next configuration resync rewrites the row.
+  Map<String, dynamic> _enforceDropOnRead(Map<String, dynamic> json) {
+    if (storePersonalFields) return json;
+    final annotation = readPersonalFieldAnnotation(json);
+    if (annotation == null || !annotation.stored) return json;
+    return applyPersonalFieldPolicy(
+      json,
+      personalFields: annotation.fields,
+      store: false,
+    );
+  }
 
   void _putInCache(String doctype, DocTypeMeta meta) {
     if (_metaCache.containsKey(doctype)) {
@@ -70,11 +124,18 @@ class MetaService {
   /// values. Shared by [fetchAndStoreInDb] (prefetch path) and [getMeta]'s
   /// network-refresh branch so the four preserved fields cannot drift
   /// between the two write paths.
-  Future<void> _upsertMetaJson(
+  ///
+  /// Applies the personal-field policy and returns the map actually stored.
+  Future<Map<String, dynamic>> _upsertMetaJson(
     String doctype,
-    Map<String, dynamic> metaData,
+    Map<String, dynamic> serverMeta,
   ) async {
     final existing = await _database.doctypeMetaDao.findByDoctype(doctype);
+    final metaData = _withPersonalFieldPolicy(
+      doctype,
+      serverMeta,
+      existing?.metaJson,
+    );
     final entity = DoctypeMetaEntity(
       doctype: doctype,
       modified: metaData['modified']?.toString(),
@@ -93,6 +154,7 @@ class MetaService {
     // (e.g. OfflineRepository's per-doctype meta cache) so they don't
     // keep serving a stale snapshot for the rest of the session.
     onMetaRefreshed?.call(doctype);
+    return metaData;
   }
 
   /// Fetches from server and saves to DB only (no in-memory cache). Use for prefetch.
@@ -157,7 +219,11 @@ class MetaService {
     if (!forceRefresh) {
       final entity = await _database.doctypeMetaDao.findByDoctype(doctype);
       if (entity != null) {
-        final meta = DocTypeMeta.fromJson(jsonDecode(entity.metaJson));
+        final meta = DocTypeMeta.fromJson(
+          _enforceDropOnRead(
+            jsonDecode(entity.metaJson) as Map<String, dynamic>,
+          ),
+        );
         // A cached meta with nothing renderable in it is a DEAD END, not a hit.
         //
         // This lookup is local-first, so whatever is in SQLite wins forever —
@@ -198,14 +264,17 @@ class MetaService {
       if (forceRefresh) rethrow;
       final entity = await _database.doctypeMetaDao.findByDoctype(doctype);
       if (entity != null) {
-        final meta = DocTypeMeta.fromJson(jsonDecode(entity.metaJson));
+        final meta = DocTypeMeta.fromJson(
+          _enforceDropOnRead(
+            jsonDecode(entity.metaJson) as Map<String, dynamic>,
+          ),
+        );
         _putInCache(doctype, meta);
         return meta;
       }
       rethrow;
     }
-    final meta = DocTypeMeta.fromJson(metaData);
-    await _upsertMetaJson(doctype, metaData);
+    final meta = DocTypeMeta.fromJson(await _upsertMetaJson(doctype, metaData));
     _putInCache(doctype, meta);
     return meta;
   }
@@ -650,8 +719,27 @@ class MetaService {
         return;
       }
 
+      // Personal fields: remember the server's list for this session, and
+      // re-fetch any doctype whose stored meta was shaped by a different list
+      // or a different `storePersonalFields` setting.
+      _personalFieldsByDoctype = {
+        for (final m in scopedFormNames) m.mobileDoctype: m.personalFields,
+      };
+
       // Update mobile form doctypes and get list of doctypes to sync
       final doctypesToSync = await _updateMobileFormDoctypes(scopedFormNames);
+      for (final m in scopedFormNames) {
+        if (m.mobileDoctype.isEmpty ||
+            doctypesToSync.contains(m.mobileDoctype)) {
+          continue;
+        }
+        if (await _personalFieldPolicyStale(
+          m.mobileDoctype,
+          m.personalFields,
+        )) {
+          doctypesToSync.add(m.mobileDoctype);
+        }
+      }
 
       // Sync all doctypes that need updating.
       //
@@ -681,10 +769,80 @@ class MetaService {
           }
         }
       }
+
+      if (!storePersonalFields) {
+        for (final m in scopedFormNames) {
+          if (m.personalFields.isEmpty) continue;
+          try {
+            await _clearLocalPersonalValues(m.mobileDoctype, m.personalFields);
+          } catch (e, st) {
+            sdkLog(
+              'MetaService: clearing local personal values for '
+              '${m.mobileDoctype} failed — $e\n$st',
+            );
+          }
+        }
+      }
     } catch (e) {
       // Re-throw to let caller handle errors
       if (e is Exception) rethrow;
       throw Exception('Failed to resync mobile configuration: $e');
+    }
+  }
+
+  /// True when the stored meta for [doctype] does not reflect [fields] and
+  /// the current [storePersonalFields] setting, so it must be re-fetched.
+  Future<bool> _personalFieldPolicyStale(
+    String doctype,
+    List<String> fields,
+  ) async {
+    final entity = await _database.doctypeMetaDao.findByDoctype(doctype);
+    if (entity == null || entity.metaJson.isEmpty || entity.metaJson == '{}') {
+      return false; // queued for a first fetch already
+    }
+    final Map<String, dynamic> json;
+    try {
+      json = jsonDecode(entity.metaJson) as Map<String, dynamic>;
+    } catch (_) {
+      return true;
+    }
+    final annotation = readPersonalFieldAnnotation(json);
+    if (annotation == null) return fields.isNotEmpty;
+    if (!listEquals(annotation.fields, fields)) return true;
+    if (fields.isEmpty) return false;
+    if (annotation.stored != storePersonalFields) return true;
+    if (storePersonalFields) {
+      // Kept, so every field must still be in the stored meta.
+      final present = <Object?>{
+        for (final f in (json['fields'] as List? ?? const []))
+          if (f is Map) f['fieldname'],
+      };
+      return !fields.every(present.contains);
+    }
+    return false;
+  }
+
+  /// Blanks personal-field columns left in the local mirror (values pulled
+  /// before the server marked the fields personal, or by an install that kept
+  /// them). Columns are left in place; only the values go.
+  Future<void> _clearLocalPersonalValues(
+    String doctype,
+    List<String> fields,
+  ) async {
+    final table = await _database.doctypeMetaDao.getTableName(doctype);
+    if (table == null) return;
+    final db = _database.rawDatabase;
+    final cols = (await db.rawQuery(
+      'PRAGMA table_info("$table")',
+    )).map((r) => r['name'] as String?).toSet();
+    for (final f in fields) {
+      if (!cols.contains(f)) continue;
+      final norm = '${f}__norm';
+      await db.rawUpdate(
+        'UPDATE "$table" SET "$f" = NULL'
+        '${cols.contains(norm) ? ', "$norm" = NULL' : ''}'
+        ' WHERE "$f" IS NOT NULL',
+      );
     }
   }
 

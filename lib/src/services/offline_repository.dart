@@ -1376,3 +1376,10 @@ bool metaHasChildTableFields(DocTypeMeta meta) {
     (f) => f.fieldtype == 'Table' || f.fieldtype == 'Table MultiSelect',
   );
 }
+
+/// Returns true if [meta] must be pulled through
+/// `mobile_sync.get_docs_with_children` rather than the flat
+/// `frappe.client.get_list`: it has child tables, or it keeps personal fields
+/// that only that endpoint returns in clear ([DocTypeMeta.storesPersonalFields]).
+bool metaPullsFullDocs(DocTypeMeta meta) =>
+    metaHasChildTableFields(meta) || meta.storesPersonalFields;

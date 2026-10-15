@@ -129,11 +129,9 @@ void main() {
 
       expect(doc['name'], 'DOC-1');
       expect(server.creates, hasLength(1));
-      expect(
-        server.lookups,
-        [u],
-        reason: 'an ambiguous failure must be resolved, not reported',
-      );
+      expect(server.lookups, [
+        u,
+      ], reason: 'an ambiguous failure must be resolved, not reported');
     });
 
     test('a timeout that did NOT land still surfaces the error', () async {

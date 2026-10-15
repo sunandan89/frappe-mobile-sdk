@@ -10,6 +10,7 @@ import '../models/doc_type_meta.dart';
 import '../utils/sdk_log.dart';
 import '../utils/uuid_pattern.dart';
 import 'child_table_info.dart';
+import 'personal_fields.dart';
 
 /// Frappe returns `modified` as `"YYYY-MM-DD HH:MM:SS.ffffff"` with no
 /// timezone suffix. `DateTime.tryParse` interprets such tz-naive strings
@@ -520,6 +521,10 @@ class PullApply {
         if (sqliteColumnTypeFor(type) == null) continue;
         if (_systemParentColumnNames.contains(name)) continue;
         final v = r[name];
+        // A server-side ciphertext (personal field read through an endpoint
+        // that does not decrypt) is never stored as if it were the value.
+        // Skipping the key leaves an existing local value untouched.
+        if (isEncryptedPersonalValue(v)) continue;
         parentRow[name] = v;
         if (isLinkFieldType(type)) {
           parentRow['${name}__is_local'] = 0;
@@ -705,6 +710,10 @@ class PullApply {
         if (sqliteColumnTypeFor(type) == null) continue;
         if (_systemParentColumnNames.contains(name)) continue;
         final v = r[name];
+        // A server-side ciphertext (personal field read through an endpoint
+        // that does not decrypt) is never stored as if it were the value.
+        // Skipping the key leaves an existing local value untouched.
+        if (isEncryptedPersonalValue(v)) continue;
         parentRow[name] = v;
         if (isLinkFieldType(type)) {
           parentRow['${name}__is_local'] = 0;

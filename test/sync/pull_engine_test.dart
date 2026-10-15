@@ -812,11 +812,9 @@ void main() {
             DocTypeMeta(name: dt, fields: [f('customer_name', 'Data')]),
       );
       final deferred = await engine.run(closure, allowedDoctypes: {'Customer'});
-      expect(
-        fetched,
-        ['Customer'],
-        reason: 'Order not in allowedDoctypes — fetcher never called for it',
-      );
+      expect(fetched, [
+        'Customer',
+      ], reason: 'Order not in allowedDoctypes — fetcher never called for it');
       expect(
         deferred,
         isEmpty,
